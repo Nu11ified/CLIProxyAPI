@@ -22,6 +22,7 @@ const (
 	schedulerStrategyRoundRobin         schedulerStrategy = 1
 	schedulerStrategyFillFirst          schedulerStrategy = 2
 	schedulerStrategyWeightedRoundRobin schedulerStrategy = 3
+	schedulerStrategyQuotaAware         schedulerStrategy = 4
 )
 
 // scheduledState describes how an auth currently participates in a model shard.
@@ -170,6 +171,8 @@ func selectorStrategy(selector Selector) schedulerStrategy {
 		return schedulerStrategyFillFirst
 	case *WeightedRoundRobinSelector:
 		return schedulerStrategyWeightedRoundRobin
+	case *QuotaAwareSelector:
+		return schedulerStrategyQuotaAware
 	case nil, *RoundRobinSelector:
 		return schedulerStrategyRoundRobin
 	default:
@@ -517,7 +520,7 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 		return nil, "", s.mixedUnavailableErrorLocked(normalized, model, predicate)
 	}
 
-	if strategy == schedulerStrategyFillFirst {
+	if strategy == schedulerStrategyFillFirst || strategy == schedulerStrategyQuotaAware {
 		for providerIndex, providerKey := range normalized {
 			shard := candidateShards[providerIndex]
 			if shard == nil {
@@ -979,6 +982,26 @@ func (s *authScheduler) upsertAuthResultLocked(auth *Auth, targetModels []string
 		providerState.upsertAuthForModelsLocked(meta, nil, true, now)
 	} else {
 		providerState.upsertAuthForModelsLocked(meta, targetModels, credentialScoped, now)
+		// Quota headers describe the credential, even when the result's cooldown
+		// only applies to one model. Keep every existing model shard's routing
+		// observation current without changing its model-specific availability.
+		if s.strategy == schedulerStrategyQuotaAware {
+			providerState.refreshQuotaObservationLocked(authID, auth.Quota)
+		}
+	}
+}
+
+func (p *providerScheduler) refreshQuotaObservationLocked(authID string, quota QuotaState) {
+	for _, shard := range p.modelShards {
+		if shard == nil {
+			continue
+		}
+		entry := shard.entries[authID]
+		if entry == nil || entry.auth == nil {
+			continue
+		}
+		entry.auth.Quota.ObservedAt = quota.ObservedAt
+		entry.auth.Quota.Signals = quota.Clone().Signals
 	}
 }
 
@@ -1376,6 +1399,15 @@ func (m *modelScheduler) pickReadyAtPriorityLocked(preferWebsocket bool, priorit
 	switch strategy {
 	case schedulerStrategyFillFirst:
 		picked = view.pickFirst(predicate)
+	case schedulerStrategyQuotaAware:
+		for _, entry := range view.flat {
+			if entry == nil || entry.auth == nil || (predicate != nil && !predicate(entry)) {
+				continue
+			}
+			if picked == nil || quotaAwareBetter(entry.auth, picked.auth, m.modelKey, time.Now()) {
+				picked = entry
+			}
+		}
 	case schedulerStrategyWeightedRoundRobin:
 		picked = view.pickWeighted(predicate)
 	default:

@@ -10,3 +10,10 @@ func TestNormalizeRoutingStrategyWeightedRoundRobin(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeRoutingStrategyQuotaAware(t *testing.T) {
+	got, ok := normalizeRoutingStrategy("quota-aware")
+	if !ok || got != "quota-aware" {
+		t.Fatalf("normalizeRoutingStrategy(quota-aware) = %q, %v", got, ok)
+	}
+}
