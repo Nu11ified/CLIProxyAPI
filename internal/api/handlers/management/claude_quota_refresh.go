@@ -92,7 +92,7 @@ func (h *Handler) refreshClaudeQuota(ctx context.Context, auth *coreauth.Auth) e
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Anthropic-Beta", "oauth-2025-04-20")
 		req.Header.Set("Accept", "application/json")
-		return (&http.Client{Timeout: 15 * time.Second, Transport: h.apiCallTransport(auth, "")}).Do(req)
+		return (&http.Client{Transport: h.apiCallTransport(auth, "")}).Do(req)
 	}
 	resp, err := requestUsage(auth)
 	if err != nil {
@@ -124,9 +124,9 @@ func (h *Handler) refreshClaudeQuota(ctx context.Context, auth *coreauth.Auth) e
 	return h.authManager.ObserveQuotaHeaders(auth.ID, signals, time.Now())
 }
 
-// RefreshClaudeQuotas refreshes one credential, or every enabled Claude OAuth
-// credential when auth_index is omitted. It does not send model requests.
-func (h *Handler) RefreshClaudeQuotas(c *gin.Context) {
+// RefreshOAuthQuotas refreshes one credential, or every enabled Claude and
+// Codex OAuth credential when auth_index is omitted. It does not send model requests.
+func (h *Handler) RefreshOAuthQuotas(c *gin.Context) {
 	var body credentialQuotaRequest
 	if err := c.ShouldBindJSON(&body); err != nil && err != io.EOF {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
@@ -139,10 +139,10 @@ func (h *Handler) RefreshClaudeQuotas(c *gin.Context) {
 	}
 	result := make(map[string]string)
 	for _, auth := range h.authManager.List() {
-		if auth == nil || (index != "" && auth.Index != index) || !claudeOAuthAuth(auth) {
+		if auth == nil || (index != "" && auth.Index != index) || !refreshableOAuthAuth(auth) {
 			continue
 		}
-		if err := h.refreshClaudeQuota(c.Request.Context(), auth); err != nil {
+		if err := h.refreshOAuthQuota(c.Request.Context(), auth); err != nil {
 			result[auth.Index] = err.Error()
 		} else {
 			result[auth.Index] = "ok"
@@ -151,7 +151,21 @@ func (h *Handler) RefreshClaudeQuotas(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": result})
 }
 
-func (h *Handler) startClaudeQuotaRefresh() {
+func refreshableOAuthAuth(auth *coreauth.Auth) bool {
+	return claudeOAuthAuth(auth) || codexOAuthAuth(auth)
+}
+
+func (h *Handler) refreshOAuthQuota(ctx context.Context, auth *coreauth.Auth) error {
+	if claudeOAuthAuth(auth) {
+		return h.refreshClaudeQuota(ctx, auth)
+	}
+	if codexOAuthAuth(auth) {
+		return h.refreshCodexQuota(ctx, auth)
+	}
+	return fmt.Errorf("credential has no supported quota refresh")
+}
+
+func (h *Handler) startOAuthQuotaRefresh() {
 	go func() {
 		timer := time.NewTimer(15 * time.Second)
 		defer timer.Stop()
@@ -165,14 +179,15 @@ func (h *Handler) startClaudeQuotaRefresh() {
 			h.mu.Unlock()
 			if cfg != nil && strings.EqualFold(cfg.Routing.Strategy, "quota-aware") && manager != nil {
 				for _, auth := range manager.List() {
-					if !claudeOAuthAuth(auth) {
+					if !refreshableOAuthAuth(auth) {
 						continue
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-					if err := h.refreshClaudeQuota(ctx, auth); err != nil {
-						log.WithError(err).Warnf("Claude quota refresh failed for %s", auth.Index)
-					}
+					err := h.refreshOAuthQuota(ctx, auth)
 					cancel()
+					if err != nil {
+						log.WithError(err).Warnf("OAuth quota refresh failed for %s", auth.Index)
+					}
 				}
 			}
 			<-ticker.C

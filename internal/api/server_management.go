@@ -82,7 +82,8 @@ func (s *Server) registerManagementRoutes() {
 
 		mgmt.GET("/quota/providers", s.mgmt.GetQuotaProviders)
 		mgmt.POST("/quota/fetch", s.mgmt.FetchCredentialQuota)
-		mgmt.POST("/quota/refresh", s.mgmt.RefreshClaudeQuotas)
+		mgmt.POST("/quota/refresh", s.mgmt.RefreshOAuthQuotas)
+		mgmt.GET("/routing/preview", s.mgmt.GetRoutingPreview)
 		mgmt.POST("/quota/reset", s.mgmt.ResetCredentialQuota)
 
 		mgmt.GET("/api-keys", s.mgmt.GetAPIKeys)
@@ -179,6 +180,7 @@ func (s *Server) registerManagementRoutes() {
 
 		mgmt.GET("/auth-files", s.mgmt.ListAuthFiles)
 		mgmt.GET("/auth-files/models", s.mgmt.GetAuthFileModels)
+		mgmt.GET("/routing/models", s.mgmt.GetRoutingModels)
 		mgmt.GET("/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
 		mgmt.GET("/auth-files/download", s.mgmt.DownloadAuthFile)
 		mgmt.POST("/auth-files", s.mgmt.UploadAuthFile)

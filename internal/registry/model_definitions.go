@@ -39,7 +39,25 @@ type staticModelsJSON struct {
 
 // GetClaudeModels returns the standard Claude model definitions.
 func GetClaudeModels() []*ModelInfo {
-	return cloneModelInfos(getModels().Claude)
+	models := cloneModelInfos(getModels().Claude)
+	for _, model := range models {
+		if model != nil && model.ID == "claude-sonnet-5-5" {
+			return models
+		}
+	}
+	// The upstream catalog can lag a same-day release. Keep Sonnet 5.5
+	// available until the catalog publishes its own definition.
+	for _, model := range models {
+		if model != nil && model.ID == "claude-sonnet-5" {
+			fallback := cloneModelInfo(model)
+			fallback.ID = "claude-sonnet-5-5"
+			fallback.DisplayName = "Claude Sonnet 5.5"
+			fallback.Description = "Anthropic's Claude Sonnet 5.5 model"
+			fallback.Created = 1790553600
+			return append(models, fallback)
+		}
+	}
+	return models
 }
 
 // GetGeminiModels returns the standard Gemini model definitions.
@@ -538,7 +556,7 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 
 	data := getModels()
 	allModels := [][]*ModelInfo{
-		data.Claude,
+		GetClaudeModels(),
 		data.Gemini,
 		data.Vertex,
 		data.AIStudio,

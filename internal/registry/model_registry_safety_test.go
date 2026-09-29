@@ -197,6 +197,19 @@ func TestLookupModelInfoIncludesClaudeSonnet5(t *testing.T) {
 	}
 }
 
+func TestClaudeSonnet55AvailableWhileRemoteCatalogLags(t *testing.T) {
+	model := LookupModelInfo("claude-sonnet-5-5")
+	if model == nil {
+		t.Fatal("expected Claude Sonnet 5.5 static model")
+	}
+	if model.DisplayName != "Claude Sonnet 5.5" || model.Type != "claude" {
+		t.Fatalf("unexpected Claude Sonnet 5.5 metadata: %+v", model)
+	}
+	if model.ContextLength != 1000000 || model.MaxCompletionTokens != 128000 {
+		t.Fatalf("unexpected Claude Sonnet 5.5 limits: %+v", model)
+	}
+}
+
 func TestApplyClientModelCapabilities_UpdatesAllViews(t *testing.T) {
 	r := newTestModelRegistry()
 	r.RegisterClient("ag-client-1", "antigravity", []*ModelInfo{{
