@@ -216,7 +216,11 @@
       }
       function resetText(signals, bucket, provider) {
         const seconds = provider === 'codex' ? codexWindow(signals, bucket)?.reset : Number(signal(signals, bucket + '-reset'));
-        if (!Number.isFinite(seconds) || seconds <= 0) return 'Reset unknown';
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+          if (provider === 'claude' && percent(signals, bucket, provider) === 0) return 'No active window';
+          if (provider === 'codex' && bucket === '5h' && codexWindow(signals, '7d') && !codexWindow(signals, '5h')) return 'Provider reports weekly only';
+          return 'Reset not reported';
+        }
         const delta = seconds * 1000 - Date.now();
         if (delta <= 0) return 'Reset due';
         const hours = Math.ceil(delta / 3600000);
@@ -229,7 +233,7 @@
         node.className = 'meter';
         const top = document.createElement('div'); top.className = 'meter-top';
         const title = document.createElement('span'); title.textContent = label;
-        const value = document.createElement('strong'); value.textContent = used === null ? 'No reading' : Math.round(used) + '% used';
+        const value = document.createElement('strong'); value.textContent = used === null ? 'Not reported' : Math.round(used) + '% used';
         top.append(title, value);
         const track = document.createElement('div'); track.className = 'track';
         const fill = document.createElement('div'); fill.className = 'fill' + (used >= 98 ? ' full' : used >= 80 ? ' warn' : '');

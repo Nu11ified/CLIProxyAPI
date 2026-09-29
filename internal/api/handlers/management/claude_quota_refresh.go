@@ -46,14 +46,15 @@ func claudeUsageSignals(usage claudeUsage) http.Header {
 		if used == nil || math.IsNaN(*used) || math.IsInf(*used, 0) || *used < 0 {
 			return
 		}
-		reset, err := time.Parse(time.RFC3339Nano, resetText)
-		if err != nil || reset.IsZero() {
-			return
-		}
 		prefix := "Anthropic-Ratelimit-Unified-" + bucket
 		headers.Set(prefix+"-Utilization", strconv.FormatFloat(*used/100, 'f', -1, 64))
-		headers.Set(prefix+"-Reset", strconv.FormatInt(reset.Unix(), 10))
-		if *used >= 100 && reset.After(time.Now()) {
+		// An unused Claude window reports utilization=0 with resets_at=null.
+		// The percentage is still a reading; only its reset time is absent.
+		reset, err := time.Parse(time.RFC3339Nano, resetText)
+		if err == nil && !reset.IsZero() {
+			headers.Set(prefix+"-Reset", strconv.FormatInt(reset.Unix(), 10))
+		}
+		if *used >= 100 && (reset.IsZero() || reset.After(time.Now())) {
 			headers.Set(prefix+"-Status", "rejected")
 		} else {
 			headers.Set(prefix+"-Status", "allowed")
